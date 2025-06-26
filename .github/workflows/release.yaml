@@ -3,71 +3,47 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
+      - 'v*'
 
 jobs:
-  build-linux:
+  release:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.22'
+
+      - name: Set up Docker (for fyne-cross)
+        uses: docker/setup-buildx-action@v3
 
       - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
-      - name: Install Fyne CLI
+      - name: Install build dependencies
         run: |
           go install fyne.io/tools/cmd/fyne@latest
-        env:
-          PATH: ${{ env.PATH }}:$(go env GOPATH)/bin
+          go install github.com/fyne-io/fyne-cross@latest
 
-      - name: Build and package
-        run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
-          make package-deb
+      - name: Build all platforms
+        run: make build
 
-      - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v3
+      - name: Package all platforms
+        run: make package
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
         with:
-          name: linux-artifacts
-          path: dist/*
-
-  create-release:
-    needs: build-linux
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Linux artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: linux-artifacts
-          path: artifacts
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: artifacts/*
-          body: |
-            ## GitHub Profile Manager ${{ github.ref_name }}
-            
-            ### Installation
-
-            #### Ubuntu/Debian
-            Download the `.deb` file and install with:
-            ```bash
-            sudo dpkg -i github-profile-manager_*.deb
-            ```
-
-            ### Features
-            - Manage multiple GitHub profiles
-            - Switch between git configurations
-            - Manage SSH keys per profile
-            - Native desktop integration
+          files: |
+            dist/*.deb
+            dist/*.tar.xz
+            dist/*.dmg
+            dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

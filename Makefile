@@ -19,12 +19,13 @@ DIST_DIR     = dist
 DEB_DIR      = $(BUILD_DIR)/deb
 BIN_PATH     = $(BUILD_DIR)/linux/$(APP_NAME)
 
-.PHONY: all clean deps test build-linux package-deb release
+.PHONY: all clean deps test build-linux build-darwin build-darwin-amd64 build-darwin-arm64 build package-deb package-tar package-dmg package-dmg-amd64 package-dmg-arm64 package-zip-amd64 package-zip-arm64 package-linux package-darwin package release
 
-all: deps test build-linux
+all: deps test build
 
 deps:
 	go install fyne.io/tools/cmd/fyne@latest
+	go install github.com/fyne-io/fyne-cross@latest
 	$(GOGET) -u ./...
 
 clean:
@@ -34,26 +35,32 @@ clean:
 test:
 	$(GOTEST) -v ./...
 
+# Cross-compilation
 build-linux:
 	@echo "Building for Linux..."
 	@mkdir -p $(BUILD_DIR)/linux
 	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BIN_PATH) .
 
+build-darwin-amd64:
+	@echo "Building for macOS Intel..."
+	@mkdir -p $(BUILD_DIR)/darwin-amd64
+	fyne-cross darwin -arch=amd64 -output $(APP_NAME) -app-id $(APP_ID) .
+	@mv fyne-cross/dist/darwin-amd64/ $(BUILD_DIR)/darwin-amd64/ || true
+
+build-darwin-arm64:
+	@echo "Building for macOS Apple Silicon..."
+	@mkdir -p $(BUILD_DIR)/darwin-arm64  
+	fyne-cross darwin -arch=arm64 -output $(APP_NAME) -app-id $(APP_ID) .
+	@mv fyne-cross/dist/darwin-arm64/ $(BUILD_DIR)/darwin-arm64/ || true
+
+build-darwin: build-darwin-amd64 build-darwin-arm64
+
+build: build-linux build-darwin
+
+# Packaging
 package-deb: build-linux
 	@echo "Packaging for Ubuntu (.deb)..."
 	@mkdir -p $(DIST_DIR)
-
-	# Fyne package
-	$(FYNE) package -os linux \
-		--name "GitHub Profile Manager" \
-		--app-id $(APP_ID) \
-		--app-version $(VERSION) \
-		--source-dir . \
-		--executable $(BIN_PATH) \
-		--icon logo.png \
-		--release
-
-	@mv *.tar.xz $(DIST_DIR)/GitHubProfileManager-$(VERSION)-linux-amd64.tar.xz 2>/dev/null || true
 
 	# .deb structure
 	@mkdir -p $(DEB_DIR)/DEBIAN
@@ -67,28 +74,71 @@ package-deb: build-linux
 
 	# Desktop entry
 	@echo "[Desktop Entry]" > $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
-	@echo "Type=Application" >> $@
-	@echo "Name=GitHub Profile Manager" >> $@
-	@echo "Comment=Manage multiple GitHub profiles with ease" >> $@
-	@echo "Icon=$(APP_NAME)" >> $@
-	@echo "Exec=/usr/bin/$(APP_NAME)" >> $@
-	@echo "Terminal=false" >> $@
-	@echo "Categories=Development;Utility;" >> $@
+	@echo "Type=Application" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Name=GitHub Profile Manager" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Comment=Manage multiple GitHub profiles with ease" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Icon=$(APP_NAME)" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Exec=/usr/bin/$(APP_NAME)" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Terminal=false" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Categories=Development;Utility;" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
 
-	# Control file
+	# Control file (Multi-line Description, required fields)
 	@echo "Package: $(APP_NAME)" > $(DEB_DIR)/DEBIAN/control
-	@echo "Version: $(VERSION)" >> $@
-	@echo "Section: utils" >> $@
-	@echo "Priority: optional" >> $@
-	@echo "Architecture: amd64" >> $@
-	@echo "Maintainer: Your Name <your.email@example.com>" >> $@
-	@echo "Description: GitHub Profile Manager" >> $@
-	@echo " A desktop application to manage multiple GitHub profiles," >> $@
-	@echo " including git configuration and SSH keys." >> $@
+	@echo "Version: $(VERSION)" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Section: utils" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Priority: optional" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Architecture: amd64" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Maintainer: Your Name <your.email@example.com>" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Description: GitHub Profile Manager" >> $(DEB_DIR)/DEBIAN/control
+	@echo " A desktop application to manage multiple GitHub profiles," >> $(DEB_DIR)/DEBIAN/control
+	@echo " including git configuration and SSH keys." >> $(DEB_DIR)/DEBIAN/control
 
 	# Build .deb
 	@dpkg-deb --build $(DEB_DIR) $(DIST_DIR)/$(APP_NAME)_$(VERSION)_amd64.deb
 
-release: clean package-deb
+package-tar: build-linux
+	@echo "Creating Linux tarball..."
+	@mkdir -p $(DIST_DIR)
+	$(FYNE) package -os linux \
+		--name "GitHub Profile Manager" \
+		--app-id $(APP_ID) \
+		--app-version $(VERSION) \
+		--source-dir . \
+		--executable $(BIN_PATH) \
+		--icon logo.png \
+		--release
+	@mv *.tar.xz $(DIST_DIR)/GitHubProfileManager-$(VERSION)-linux-amd64.tar.xz 2>/dev/null || true
+
+package-dmg-amd64: build-darwin-amd64
+	@echo "Creating macOS DMG for Intel..."
+	@mkdir -p $(DIST_DIR)
+	@cd $(BUILD_DIR)/darwin-amd64 && \
+	hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg
+
+package-dmg-arm64: build-darwin-arm64
+	@echo "Creating macOS DMG for Apple Silicon..."
+	@mkdir -p $(DIST_DIR)
+	@cd $(BUILD_DIR)/darwin-arm64 && \
+	hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg
+
+package-dmg: package-dmg-amd64 package-dmg-arm64
+
+package-zip-amd64: build-darwin-amd64
+	@echo "Creating macOS ZIP for Intel..."
+	@mkdir -p $(DIST_DIR)
+	@cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip .
+
+package-zip-arm64: build-darwin-arm64
+	@echo "Creating macOS ZIP for Apple Silicon..."
+	@mkdir -p $(DIST_DIR)
+	@cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip .
+
+package-linux: package-deb package-tar
+
+package-darwin: package-dmg package-zip-amd64 package-zip-arm64
+
+package: package-linux package-darwin
+
+release: clean package
 	@echo "Release artifacts created in $(DIST_DIR)/"
 	@ls -la $(DIST_DIR)/
