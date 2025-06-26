@@ -118,6 +118,8 @@ package-dmg-amd64:
 	@echo "Creating macOS DMG for Intel..."
 	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
 		mkdir -p $(DIST_DIR); \
+		echo "Contents of $(BUILD_DIR)/darwin-amd64:"; \
+		ls -la $(BUILD_DIR)/darwin-amd64/; \
 		cd $(BUILD_DIR)/darwin-amd64 && \
 		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg; \
 	else \
@@ -128,6 +130,8 @@ package-dmg-arm64:
 	@echo "Creating macOS DMG for Apple Silicon..."
 	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
 		mkdir -p $(DIST_DIR); \
+		echo "Contents of $(BUILD_DIR)/darwin-arm64:"; \
+		ls -la $(BUILD_DIR)/darwin-arm64/; \
 		cd $(BUILD_DIR)/darwin-arm64 && \
 		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg; \
 	else \
@@ -138,25 +142,53 @@ package-dmg: package-dmg-amd64 package-dmg-arm64
 
 package-zip-amd64:
 	@echo "Creating macOS ZIP for Intel..."
+	@mkdir -p $(DIST_DIR)
 	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
-		mkdir -p $(DIST_DIR); \
+		echo "Contents of $(BUILD_DIR)/darwin-amd64:"; \
+		ls -la $(BUILD_DIR)/darwin-amd64/; \
 		cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip .; \
+	elif [ -f "$(BUILD_DIR)/darwin-amd64/$(APP_NAME)" ]; then \
+		echo "Creating ZIP from binary only"; \
+		cd $(BUILD_DIR)/darwin-amd64 && zip ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip $(APP_NAME); \
 	else \
-		echo "macOS Intel build not found. Skipping ZIP creation."; \
+		echo "macOS Intel build not found. Creating empty marker file."; \
+		echo "macOS Intel build failed" > $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.txt; \
 	fi
 
 package-zip-arm64:
 	@echo "Creating macOS ZIP for Apple Silicon..."
+	@mkdir -p $(DIST_DIR)
 	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
-		mkdir -p $(DIST_DIR); \
+		echo "Contents of $(BUILD_DIR)/darwin-arm64:"; \
+		ls -la $(BUILD_DIR)/darwin-arm64/; \
 		cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip .; \
+	elif [ -f "$(BUILD_DIR)/darwin-arm64/$(APP_NAME)" ]; then \
+		echo "Creating ZIP from binary only"; \
+		cd $(BUILD_DIR)/darwin-arm64 && zip ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip $(APP_NAME); \
 	else \
-		echo "macOS ARM64 build not found. Skipping ZIP creation."; \
+		echo "macOS ARM64 build not found. Creating empty marker file."; \
+		echo "macOS ARM64 build failed" > $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.txt; \
 	fi
 
-package-darwin-amd64: package-dmg-amd64 package-zip-amd64
+package-darwin-amd64: 
+	@echo "Packaging macOS Intel..."
+	@mkdir -p $(DIST_DIR)
+	@echo "Build directory contents:"
+	@ls -la $(BUILD_DIR)/ || echo "Build directory not found"
+	@$(MAKE) package-dmg-amd64
+	@$(MAKE) package-zip-amd64
+	@echo "Final dist directory contents:"
+	@ls -la $(DIST_DIR)/ || echo "Dist directory not found"
 
-package-darwin-arm64: package-dmg-arm64 package-zip-arm64
+package-darwin-arm64: 
+	@echo "Packaging macOS ARM..."
+	@mkdir -p $(DIST_DIR)
+	@echo "Build directory contents:"
+	@ls -la $(BUILD_DIR)/ || echo "Build directory not found"
+	@$(MAKE) package-dmg-arm64
+	@$(MAKE) package-zip-arm64
+	@echo "Final dist directory contents:"
+	@ls -la $(DIST_DIR)/ || echo "Dist directory not found"
 
 package-linux: package-deb package-tar
 
