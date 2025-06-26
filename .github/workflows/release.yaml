@@ -2,8 +2,8 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
+    # tags:
+    #   - 'v*'  # Trigger on version tags like v1.0.0
 
 jobs:
   build-linux:
@@ -34,17 +34,18 @@ jobs:
           make package-deb
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
-          path: dist/*
-
+          path: |
+            dist/*
+          retention-days: 7  # Optional: specify how long to retain artifacts
   create-release:
     needs: build-linux
     runs-on: ubuntu-latest
     steps:
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: linux-artifacts
           path: artifacts
@@ -55,7 +56,7 @@ jobs:
           files: artifacts/*
           body: |
             ## GitHub Profile Manager ${{ github.ref_name }}
-            
+
             ### Installation
 
             #### Ubuntu/Debian
