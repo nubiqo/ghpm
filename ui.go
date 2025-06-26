@@ -111,10 +111,10 @@ func (ui *UI) buildUI() {
 	addBtn := widget.NewButtonWithIcon("Add Profile", theme.ContentAddIcon(), ui.showAddProfileDialog)
 	detectBtn := widget.NewButtonWithIcon("Detect Current", theme.SearchIcon(), ui.detectCurrentProfile)
 
-	// Profile management buttons
+	// Profile management buttons - removed clone, added import
 	editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), ui.showEditProfileDialog)
 	deleteBtn := widget.NewButtonWithIcon("Delete", theme.DeleteIcon(), ui.deleteProfile)
-	cloneBtn := widget.NewButtonWithIcon("Clone", theme.ContentCopyIcon(), ui.cloneProfile)
+	importBtn := widget.NewButtonWithIcon("Import", theme.UploadIcon(), ui.importProfile)
 	exportBtn := widget.NewButtonWithIcon("Export", theme.DownloadIcon(), ui.exportProfile)
 
 	// Operation buttons
@@ -129,7 +129,7 @@ func (ui *UI) buildUI() {
 		widget.NewSeparator(),
 		editBtn,
 		deleteBtn,
-		cloneBtn,
+		importBtn,
 		exportBtn,
 	)
 
@@ -177,13 +177,36 @@ func (ui *UI) updateCurrentStatus() {
 	}
 }
 
-// detectCurrentProfile detects the current system configuration
+// detectCurrentProfile detects the current system configuration and shows preview
 func (ui *UI) detectCurrentProfile() {
+	// First detect the current configuration
+	profile, err := CreateFromSystem("temp")
+	if err != nil {
+		dialog.ShowError(fmt.Errorf("failed to detect configuration: %w", err), ui.window)
+		return
+	}
+
+	// Create preview text
+	previewText := fmt.Sprintf("Git Configuration:\n• Username: %s\n• Email: %s\n\n", profile.GitUsername, profile.GitEmail)
+
+	if profile.HasSSHKeys() {
+		previewText += "SSH Keys:\n• Private Key: Found\n• Public Key: Found\n\n"
+	} else {
+		previewText += "SSH Keys:\n• No SSH keys found\n\n"
+	}
+
+	previewText += "This configuration will be saved to the profile."
+
+	// Create form with name entry and preview
 	nameEntry := widget.NewEntry()
 	nameEntry.SetPlaceHolder("Enter profile name")
 
-	form := widget.NewForm(
-		widget.NewFormItem("Profile Name", nameEntry),
+	previewLabel := widget.NewLabel(previewText)
+	previewLabel.Wrapping = fyne.TextWrapWord
+
+	form := container.NewVBox(
+		widget.NewForm(widget.NewFormItem("Profile Name", nameEntry)),
+		widget.NewCard("Preview", "", previewLabel),
 	)
 
 	dlg := dialog.NewCustomConfirm("Detect Current Configuration", "Create", "Cancel", form, func(create bool) {
@@ -191,12 +214,14 @@ func (ui *UI) detectCurrentProfile() {
 			return
 		}
 
-		profile, err := CreateFromSystem(nameEntry.Text)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("failed to detect configuration: %w", err), ui.window)
+		// Check if profile name already exists
+		if _, err := ui.config.GetProfile(nameEntry.Text); err == nil {
+			dialog.ShowError(fmt.Errorf("profile with name '%s' already exists", nameEntry.Text), ui.window)
 			return
 		}
 
+		// Update profile name and create
+		profile.Name = nameEntry.Text
 		if err := ui.config.AddProfile(profile); err != nil {
 			dialog.ShowError(err, ui.window)
 			return
@@ -210,7 +235,7 @@ func (ui *UI) detectCurrentProfile() {
 			ui.window)
 	}, ui.window)
 
-	dlg.Resize(fyne.NewSize(400, 200))
+	dlg.Resize(fyne.NewSize(600, 500))
 	dlg.Show()
 }
 
@@ -251,9 +276,11 @@ func (ui *UI) showProfileDialog(profile *Profile, title string, onSave func(*Pro
 	usernameEntry := widget.NewEntry()
 	emailEntry := widget.NewEntry()
 
-	// SSH key display and selection
+	// SSH key display and selection with full path
 	privateKeyLabel := widget.NewLabel("No private key")
+	privateKeyLabel.Wrapping = fyne.TextWrapWord
 	publicKeyLabel := widget.NewLabel("No public key")
+	publicKeyLabel.Wrapping = fyne.TextWrapWord
 
 	var privateKeyContent, publicKeyContent string
 
@@ -266,10 +293,10 @@ func (ui *UI) showProfileDialog(profile *Profile, title string, onSave func(*Pro
 		publicKeyContent = profile.SSHPublicKey
 
 		if privateKeyContent != "" {
-			privateKeyLabel.SetText("Private key loaded")
+			privateKeyLabel.SetText("Private key loaded from profile")
 		}
 		if publicKeyContent != "" {
-			publicKeyLabel.SetText("Public key loaded")
+			publicKeyLabel.SetText("Public key loaded from profile")
 		}
 	}
 
@@ -295,7 +322,8 @@ func (ui *UI) showProfileDialog(profile *Profile, title string, onSave func(*Pro
 			}
 
 			privateKeyContent = keyContent
-			privateKeyLabel.SetText(fmt.Sprintf("Loaded: %s", filepath.Base(reader.URI().Path())))
+			// Show full file path
+			privateKeyLabel.SetText(fmt.Sprintf("Loaded: %s", reader.URI().Path()))
 		}, ui.window)
 	})
 
@@ -320,7 +348,8 @@ func (ui *UI) showProfileDialog(profile *Profile, title string, onSave func(*Pro
 			}
 
 			publicKeyContent = keyContent
-			publicKeyLabel.SetText(fmt.Sprintf("Loaded: %s", filepath.Base(reader.URI().Path())))
+			// Show full file path
+			publicKeyLabel.SetText(fmt.Sprintf("Loaded: %s", reader.URI().Path()))
 		}, ui.window)
 	})
 
@@ -331,23 +360,34 @@ func (ui *UI) showProfileDialog(profile *Profile, title string, onSave func(*Pro
 		publicKeyLabel.SetText("No public key")
 	})
 
-	// Create form
+	// Create form with better spacing
 	form := widget.NewForm(
 		widget.NewFormItem("Profile Name*", nameEntry),
 		widget.NewFormItem("Git Username*", usernameEntry),
 		widget.NewFormItem("Git Email*", emailEntry),
-		widget.NewFormItem("Private Key", container.NewBorder(nil, nil, selectPrivateBtn, nil, privateKeyLabel)),
-		widget.NewFormItem("Public Key", container.NewBorder(nil, nil, selectPublicBtn, nil, publicKeyLabel)),
-		widget.NewFormItem("", clearKeysBtn),
+	)
+
+	// SSH section with better layout
+	sshContainer := container.NewVBox(
+		widget.NewLabel("SSH Keys (optional)"),
+		container.NewBorder(nil, nil, selectPrivateBtn, nil, privateKeyLabel),
+		container.NewBorder(nil, nil, selectPublicBtn, nil, publicKeyLabel),
+		clearKeysBtn,
 	)
 
 	// Help text
 	helpText := widget.NewLabel("* Required fields\nSSH keys are stored securely in the profile")
 	helpText.TextStyle = fyne.TextStyle{Italic: true}
 
-	content := container.NewVBox(form, helpText)
+	content := container.NewVBox(
+		form,
+		widget.NewSeparator(),
+		sshContainer,
+		widget.NewSeparator(),
+		helpText,
+	)
 
-	// Create dialog
+	// Create dialog with larger size
 	dlg := dialog.NewCustomConfirm(title, "Save", "Cancel", content, func(save bool) {
 		if !save {
 			return
@@ -372,43 +412,33 @@ func (ui *UI) showProfileDialog(profile *Profile, title string, onSave func(*Pro
 		onSave(p)
 	}, ui.window)
 
-	dlg.Resize(fyne.NewSize(600, 500))
+	dlg.Resize(fyne.NewSize(700, 600))
 	dlg.Show()
 }
 
-// cloneProfile clones the selected profile
-func (ui *UI) cloneProfile() {
-	if ui.selectedItem < 0 || ui.selectedItem >= len(ui.profiles) {
-		dialog.ShowInformation("No Selection", "Please select a profile to clone", ui.window)
-		return
-	}
-
-	sourceProfile := ui.profiles[ui.selectedItem]
-
-	nameEntry := widget.NewEntry()
-	nameEntry.SetText(sourceProfile.Name + "_copy")
-
-	form := widget.NewForm(
-		widget.NewFormItem("New Profile Name", nameEntry),
-	)
-
-	dlg := dialog.NewCustomConfirm("Clone Profile", "Clone", "Cancel", form, func(clone bool) {
-		if !clone || nameEntry.Text == "" {
+// importProfile imports a profile from a JSON file
+func (ui *UI) importProfile() {
+	dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+		if err != nil || reader == nil {
 			return
 		}
+		defer reader.Close()
 
-		newProfile := sourceProfile.Clone(nameEntry.Text)
-		if err := ui.config.AddProfile(newProfile); err != nil {
+		filePath := reader.URI().Path()
+
+		profile, err := ui.config.ImportProfile(filePath)
+		if err != nil {
 			dialog.ShowError(err, ui.window)
 			return
 		}
 
 		ui.refresh()
-		log.Printf("Cloned profile: %s -> %s", sourceProfile.Name, newProfile.Name)
-	}, ui.window)
+		log.Printf("Imported profile: %s from %s", profile.Name, filePath)
 
-	dlg.Resize(fyne.NewSize(400, 200))
-	dlg.Show()
+		dialog.ShowInformation("Success",
+			fmt.Sprintf("Successfully imported profile '%s'", profile.Name),
+			ui.window)
+	}, ui.window)
 }
 
 // exportProfile exports the selected profile
@@ -478,7 +508,7 @@ func (ui *UI) switchProfile() {
 		profile.Name, profile.GitUsername, profile.GitEmail)
 
 	if profile.HasSSHKeys() {
-		message += "\n• Replace SSH keys with profile keys"
+		message += "\n• Replace SSH keys with profile keys\n• Move existing SSH files to dump folder"
 	}
 
 	dialog.ShowConfirm("Switch Profile", message, func(confirm bool) {
@@ -512,7 +542,7 @@ func (ui *UI) switchProfile() {
 
 				successMsg := fmt.Sprintf("Switched to profile '%s'", profile.Name)
 				if profile.HasSSHKeys() {
-					successMsg += "\nSSH keys have been configured"
+					successMsg += "\nSSH keys have been configured\nExisting SSH files moved to dump folder"
 				}
 
 				dialog.ShowInformation("Success", successMsg, ui.window)

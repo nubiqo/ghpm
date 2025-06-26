@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Profile represents a GitHub profile configuration
@@ -71,10 +72,21 @@ func (p *Profile) WriteSSHKeysToSystem() error {
 	}
 
 	sshDir := os.ExpandEnv("$HOME/.ssh")
+	dumpDir := filepath.Join(sshDir, "dump")
 
 	// Ensure SSH directory exists with correct permissions
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
 		return fmt.Errorf("failed to create SSH directory: %w", err)
+	}
+
+	// Create dump directory to preserve existing files
+	if err := os.MkdirAll(dumpDir, 0700); err != nil {
+		return fmt.Errorf("failed to create dump directory: %w", err)
+	}
+
+	// Move existing SSH files to dump folder before writing new ones
+	if err := p.moveExistingSSHFiles(sshDir, dumpDir); err != nil {
+		return fmt.Errorf("failed to backup existing SSH files: %w", err)
 	}
 
 	// Write private key
@@ -87,6 +99,54 @@ func (p *Profile) WriteSSHKeysToSystem() error {
 	publicKeyPath := filepath.Join(sshDir, "id_rsa.pub")
 	if err := os.WriteFile(publicKeyPath, []byte(p.SSHPublicKey), 0644); err != nil {
 		return fmt.Errorf("failed to write public key: %w", err)
+	}
+
+	return nil
+}
+
+// moveExistingSSHFiles moves existing SSH files to dump folder
+func (p *Profile) moveExistingSSHFiles(sshDir, dumpDir string) error {
+	// Generate timestamp for unique dump folder
+	timestamp := time.Now().Format("20060102_150405")
+	timestampDir := filepath.Join(dumpDir, timestamp)
+
+	// Read all files in SSH directory
+	files, err := os.ReadDir(sshDir)
+	if err != nil {
+		return nil // If we can't read the directory, assume nothing to move
+	}
+
+	// Check if any files exist that need to be moved (exclude dump directory itself)
+	hasFiles := false
+	for _, file := range files {
+		if !file.IsDir() || (file.IsDir() && file.Name() != "dump") {
+			hasFiles = true
+			break
+		}
+	}
+
+	if !hasFiles {
+		return nil // Nothing to move
+	}
+
+	// Create timestamped dump directory
+	if err := os.MkdirAll(timestampDir, 0700); err != nil {
+		return fmt.Errorf("failed to create timestamped dump directory: %w", err)
+	}
+
+	// Move each existing file and directory (except dump folder)
+	for _, file := range files {
+		// Skip the dump directory itself to avoid recursive issues
+		if file.IsDir() && file.Name() == "dump" {
+			continue
+		}
+
+		srcPath := filepath.Join(sshDir, file.Name())
+		dstPath := filepath.Join(timestampDir, file.Name())
+
+		if err := os.Rename(srcPath, dstPath); err != nil {
+			return fmt.Errorf("failed to move %s to dump: %w", file.Name(), err)
+		}
 	}
 
 	return nil
