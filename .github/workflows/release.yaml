@@ -8,12 +8,13 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout source
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v4
         with:
           go-version: '1.22'
 
@@ -22,54 +23,108 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
-      - name: Install Fyne CLI
+      - name: Install build dependencies
         run: |
           go install fyne.io/tools/cmd/fyne@latest
-        env:
-          PATH: ${{ env.PATH }}:$(go env GOPATH)/bin
 
-      - name: Build and package
-        run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
-          make package-deb
+      - name: Build Linux
+        run: make build-linux
+
+      - name: Package Linux
+        run: make package-linux
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: linux-artifacts
-          path: |
-            dist/*
-          retention-days: 7 # Optional: specify how long to retain artifacts
+          name: linux-packages
+          path: dist/*
 
-  create-release:
-    needs: build-linux
+  build-macos-intel:
+    runs-on: macos-13
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Install build dependencies
+        run: |
+          go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Build macOS Intel
+        run: make build-darwin-amd64
+
+      - name: Package macOS Intel
+        run: make package-darwin-amd64
+
+      - name: Upload macOS Intel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-intel-packages
+          path: dist/*
+
+  build-macos-arm:
+    runs-on: macos-14
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.22'
+
+      - name: Install build dependencies
+        run: |
+          go install fyne.io/tools/cmd/fyne@latest
+
+      - name: Build macOS ARM
+        run: make build-darwin-arm64
+
+      - name: Package macOS ARM
+        run: make package-darwin-arm64
+
+      - name: Upload macOS ARM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm-packages
+          path: dist/*
+
+  release:
+    needs: [build-linux, build-macos-intel, build-macos-arm]
     runs-on: ubuntu-latest
+    
     steps:
       - name: Download Linux artifacts
         uses: actions/download-artifact@v4
         with:
-          name: linux-artifacts
-          path: artifacts
+          name: linux-packages
+          path: dist/
 
-      - name: Create GitHub Release
+      - name: Download macOS Intel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-intel-packages
+          path: dist/
+
+      - name: Download macOS ARM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-arm-packages
+          path: dist/
+
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*
-          body: |
-            ## GitHub Profile Manager ${{ github.ref_name }}
-
-            ### Installation
-
-            #### Ubuntu/Debian
-            Download the `.deb` file and install with:
-            ```bash
-            sudo dpkg -i github-profile-manager_*.deb
-            ```
-
-            ### Features
-            - Manage multiple GitHub profiles
-            - Switch between git configurations
-            - Manage SSH keys per profile
-            - Native desktop integration
+          files: |
+            dist/*.deb
+            dist/*.tar.xz
+            dist/*.dmg
+            dist/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
