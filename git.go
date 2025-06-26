@@ -2,12 +2,11 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"time"
+	"strings"
 )
 
 // GitManager handles git and SSH operations
@@ -26,13 +25,18 @@ func (g *GitManager) SwitchProfile(p *Profile) error {
 	}
 
 	// Handle SSH keys if provided
-	if p.SSHPrivateKey != "" || p.SSHPublicKey != "" {
-		if err := g.switchSSHKeys(p); err != nil {
-			return fmt.Errorf("failed to switch SSH keys: %w", err)
+	if p.HasSSHKeys() {
+		if err := p.WriteSSHKeysToSystem(); err != nil {
+			return fmt.Errorf("failed to write SSH keys: %w", err)
+		}
+
+		// Test SSH connection after writing keys
+		if err := g.TestSSHConnection(); err != nil {
+			log.Printf("Warning: SSH test failed after switching profile: %v", err)
 		}
 	}
 
-	log.Printf("Switched to profile: %s", p.Name)
+	log.Printf("Switched to profile: %s (%s <%s>)", p.Name, p.GitUsername, p.GitEmail)
 	return nil
 }
 
@@ -61,10 +65,7 @@ func (g *GitManager) GetCurrentGitConfig() (username, email string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get git username: %w", err)
 	}
-	username = string(output)
-	if len(username) > 0 && username[len(username)-1] == '\n' {
-		username = username[:len(username)-1]
-	}
+	username = strings.TrimSpace(string(output))
 
 	// Get email
 	cmd = exec.Command("git", "config", "--global", "user.email")
@@ -72,109 +73,90 @@ func (g *GitManager) GetCurrentGitConfig() (username, email string, err error) {
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get git email: %w", err)
 	}
-	email = string(output)
-	if len(email) > 0 && email[len(email)-1] == '\n' {
-		email = email[:len(email)-1]
-	}
+	email = strings.TrimSpace(string(output))
 
 	return username, email, nil
 }
 
-// switchSSHKeys switches the SSH keys for the profile
-func (g *GitManager) switchSSHKeys(p *Profile) error {
-	sshDir := os.ExpandEnv("$HOME/.ssh")
-
-	// Ensure SSH directory exists
-	if err := os.MkdirAll(sshDir, 0700); err != nil {
-		return fmt.Errorf("failed to create SSH directory: %w", err)
-	}
-
-	// Backup existing keys
-	if err := g.backupSSHKeys(p); err != nil {
-		log.Printf("Warning: failed to backup SSH keys: %v", err)
-	}
-
-	// Copy new keys
-	privateKey, publicKey := p.GetSSHKeyPaths()
-
-	if privateKey != "" {
-		destPrivate := filepath.Join(sshDir, "id_rsa")
-		if err := g.copyFile(privateKey, destPrivate, 0600); err != nil {
-			return fmt.Errorf("failed to copy private key: %w", err)
-		}
-	}
-
-	if publicKey != "" {
-		destPublic := filepath.Join(sshDir, "id_rsa.pub")
-		if err := g.copyFile(publicKey, destPublic, 0644); err != nil {
-			return fmt.Errorf("failed to copy public key: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// backupSSHKeys backs up the current SSH keys
-func (g *GitManager) backupSSHKeys(p *Profile) error {
-	sshDir := os.ExpandEnv("$HOME/.ssh")
-	backupDir := p.GetBackupDir()
-
-	// Create backup directory
-	if err := os.MkdirAll(backupDir, 0755); err != nil {
-		return fmt.Errorf("failed to create backup directory: %w", err)
-	}
-
-	// Backup id_rsa if exists
-	privateKeyPath := filepath.Join(sshDir, "id_rsa")
-	if _, err := os.Stat(privateKeyPath); err == nil {
-		timestamp := time.Now().Format("20060102_150405")
-		backupPath := filepath.Join(backupDir, fmt.Sprintf("id_rsa_%s", timestamp))
-		if err := g.copyFile(privateKeyPath, backupPath, 0600); err != nil {
-			return fmt.Errorf("failed to backup private key: %w", err)
-		}
-	}
-
-	// Backup id_rsa.pub if exists
-	publicKeyPath := filepath.Join(sshDir, "id_rsa.pub")
-	if _, err := os.Stat(publicKeyPath); err == nil {
-		timestamp := time.Now().Format("20060102_150405")
-		backupPath := filepath.Join(backupDir, fmt.Sprintf("id_rsa.pub_%s", timestamp))
-		if err := g.copyFile(publicKeyPath, backupPath, 0644); err != nil {
-			return fmt.Errorf("failed to backup public key: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// copyFile copies a file from src to dst with the specified permissions
-func (g *GitManager) copyFile(src, dst string, perm os.FileMode) error {
-	sourceFile, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
-	destFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
-	if err != nil {
-		return err
-	}
-	defer destFile.Close()
-
-	_, err = io.Copy(destFile, sourceFile)
-	return err
-}
-
 // TestSSHConnection tests the SSH connection to GitHub
 func (g *GitManager) TestSSHConnection() error {
-	cmd := exec.Command("ssh", "-T", "git@github.com")
+	// First check if SSH keys exist
+	sshDir := os.ExpandEnv("$HOME/.ssh")
+	privateKeyPath := filepath.Join(sshDir, "id_rsa")
+
+	if _, err := os.Stat(privateKeyPath); err != nil {
+		return fmt.Errorf("SSH private key not found at %s", privateKeyPath)
+	}
+
+	// Check private key permissions
+	if err := g.checkSSHKeyPermissions(); err != nil {
+		return fmt.Errorf("SSH key permissions error: %w", err)
+	}
+
+	// Test SSH connection
+	cmd := exec.Command("ssh", "-T", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "git@github.com")
 	output, err := cmd.CombinedOutput()
+
+	outputStr := string(output)
 
 	// SSH to GitHub returns exit code 1 even on successful authentication
 	// Check the output for successful authentication message
-	outputStr := string(output)
-	if err != nil && !containsSuccessMessage(outputStr) {
-		return fmt.Errorf("SSH test failed: %s", outputStr)
+	if containsSuccessMessage(outputStr) {
+		return nil
+	}
+
+	// If we have an error and no success message, include error info
+	if err != nil {
+		return fmt.Errorf("SSH command failed: %v, output: %s", err, outputStr)
+	}
+
+	// Check for common SSH errors
+	if strings.Contains(outputStr, "Permission denied") {
+		return fmt.Errorf("SSH authentication failed - check your SSH key")
+	}
+
+	if strings.Contains(outputStr, "Could not resolve hostname") {
+		return fmt.Errorf("network error - could not connect to GitHub")
+	}
+
+	if strings.Contains(outputStr, "Connection timed out") {
+		return fmt.Errorf("connection timeout - check your network connection")
+	}
+
+	return fmt.Errorf("SSH test failed: %s", outputStr)
+}
+
+// checkSSHKeyPermissions ensures SSH keys have correct permissions
+func (g *GitManager) checkSSHKeyPermissions() error {
+	sshDir := os.ExpandEnv("$HOME/.ssh")
+	privateKeyPath := filepath.Join(sshDir, "id_rsa")
+	publicKeyPath := filepath.Join(sshDir, "id_rsa.pub")
+
+	// Check SSH directory permissions (should be 700)
+	if info, err := os.Stat(sshDir); err == nil {
+		if info.Mode().Perm() != 0700 {
+			if err := os.Chmod(sshDir, 0700); err != nil {
+				return fmt.Errorf("failed to fix SSH directory permissions: %w", err)
+			}
+		}
+	}
+
+	// Check private key permissions (should be 600)
+	if info, err := os.Stat(privateKeyPath); err == nil {
+		if info.Mode().Perm() != 0600 {
+			if err := os.Chmod(privateKeyPath, 0600); err != nil {
+				return fmt.Errorf("failed to fix private key permissions: %w", err)
+			}
+		}
+	}
+
+	// Check public key permissions (should be 644)
+	if info, err := os.Stat(publicKeyPath); err == nil {
+		if info.Mode().Perm() != 0644 {
+			if err := os.Chmod(publicKeyPath, 0644); err != nil {
+				return fmt.Errorf("failed to fix public key permissions: %w", err)
+			}
+		}
 	}
 
 	return nil
@@ -189,8 +171,9 @@ func containsSuccessMessage(output string) bool {
 		"Hi ",
 	}
 
+	outputLower := strings.ToLower(output)
 	for _, msg := range successMessages {
-		if len(output) > 0 && len(msg) > 0 && contains(output, msg) {
+		if strings.Contains(outputLower, strings.ToLower(msg)) {
 			return true
 		}
 	}
@@ -198,17 +181,41 @@ func containsSuccessMessage(output string) bool {
 	return false
 }
 
-// contains checks if a string contains a substring
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && containsAt(s, substr, 0)
-}
+// ValidateSSHKey validates SSH key format and content
+func (g *GitManager) ValidateSSHKey(keyContent string, isPrivate bool) error {
+	if strings.TrimSpace(keyContent) == "" {
+		return fmt.Errorf("SSH key content is empty")
+	}
 
-// containsAt checks if a string contains a substring starting at any position
-func containsAt(s, substr string, start int) bool {
-	for i := start; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
+	if isPrivate {
+		// Check for private key markers
+		if !strings.Contains(keyContent, "BEGIN") || !strings.Contains(keyContent, "PRIVATE KEY") {
+			return fmt.Errorf("invalid private key format")
+		}
+	} else {
+		// Check for public key format
+		if !strings.HasPrefix(strings.TrimSpace(keyContent), "ssh-") {
+			return fmt.Errorf("invalid public key format")
 		}
 	}
-	return false
+
+	return nil
+}
+
+// GetSSHKeyFingerprint gets the fingerprint of the current SSH key
+func (g *GitManager) GetSSHKeyFingerprint() (string, error) {
+	sshDir := os.ExpandEnv("$HOME/.ssh")
+	publicKeyPath := filepath.Join(sshDir, "id_rsa.pub")
+
+	if _, err := os.Stat(publicKeyPath); err != nil {
+		return "", fmt.Errorf("public key not found")
+	}
+
+	cmd := exec.Command("ssh-keygen", "-lf", publicKeyPath)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get fingerprint: %w", err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
 }

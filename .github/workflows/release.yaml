@@ -1,0 +1,49 @@
+name: Build and Release Fyne App
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build:
+    name: Build for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Install Fyne CLI
+        run: go install fyne.io/fyne/v2/cmd/fyne@latest
+
+      - name: Build App
+        run: |
+          go mod tidy
+          go install fyne.io/fyne/v2/cmd/fyne@latest
+          mkdir build
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            fyne package -os windows -name ghpm -release
+            mv ghpm.exe build/
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            fyne package -os darwin -name ghpm -release
+            mv ghpm.app build/
+          else
+            sudo apt update && sudo apt install -y libgl1-mesa-dev xorg-dev
+            fyne package -os linux -name ghpm -release
+            mv ghpm build/
+          fi
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v1
+        with:
+          files: build/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
