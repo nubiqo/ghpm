@@ -154,6 +154,10 @@ package-zip-arm64:
 		echo "macOS ARM64 build not found. Skipping ZIP creation."; \
 	fi
 
+package-darwin-amd64: package-dmg-amd64 package-zip-amd64
+
+package-darwin-arm64: package-dmg-arm64 package-zip-arm64
+
 package-linux: package-deb package-tar
 
 package-darwin: package-dmg package-zip-amd64 package-zip-arm64
