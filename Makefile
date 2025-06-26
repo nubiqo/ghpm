@@ -67,24 +67,24 @@ package-deb: build-linux
 
 	# Desktop entry
 	@echo "[Desktop Entry]" > $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
-	@echo "Type=Application" >> $@
-	@echo "Name=GitHub Profile Manager" >> $@
-	@echo "Comment=Manage multiple GitHub profiles with ease" >> $@
-	@echo "Icon=$(APP_NAME)" >> $@
-	@echo "Exec=/usr/bin/$(APP_NAME)" >> $@
-	@echo "Terminal=false" >> $@
-	@echo "Categories=Development;Utility;" >> $@
+	@echo "Type=Application" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Name=GitHub Profile Manager" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Comment=Manage multiple GitHub profiles with ease" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Icon=$(APP_NAME)" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Exec=/usr/bin/$(APP_NAME)" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Terminal=false" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
+	@echo "Categories=Development;Utility;" >> $(DEB_DIR)/usr/share/applications/$(APP_NAME).desktop
 
-	# Control file
+	# Control file (Multi-line Description, required fields)
 	@echo "Package: $(APP_NAME)" > $(DEB_DIR)/DEBIAN/control
-	@echo "Version: $(VERSION)" >> $@
-	@echo "Section: utils" >> $@
-	@echo "Priority: optional" >> $@
-	@echo "Architecture: amd64" >> $@
-	@echo "Maintainer: Your Name <your.email@example.com>" >> $@
-	@echo "Description: GitHub Profile Manager" >> $@
-	@echo " A desktop application to manage multiple GitHub profiles," >> $@
-	@echo " including git configuration and SSH keys." >> $@
+	@echo "Version: $(VERSION)" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Section: utils" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Priority: optional" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Architecture: amd64" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Maintainer: Your Name <your.email@example.com>" >> $(DEB_DIR)/DEBIAN/control
+	@echo "Description: GitHub Profile Manager" >> $(DEB_DIR)/DEBIAN/control
+	@echo " A desktop application to manage multiple GitHub profiles," >> $(DEB_DIR)/DEBIAN/control
+	@echo " including git configuration and SSH keys." >> $(DEB_DIR)/DEBIAN/control
 
 	# Build .deb
 	@dpkg-deb --build $(DEB_DIR) $(DIST_DIR)/$(APP_NAME)_$(VERSION)_amd64.deb

@@ -3,19 +3,19 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
+      - 'v*'
 
 jobs:
   build-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: '1.21'
+          go-version: '1.22'
 
       - name: Install system dependencies
         run: |
@@ -34,28 +34,30 @@ jobs:
           make package-deb
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: linux-artifacts
-          path: dist/*
+          path: |
+            dist/*
+          retention-days: 7 # Optional: specify how long to retain artifacts
 
   create-release:
     needs: build-linux
     runs-on: ubuntu-latest
     steps:
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: linux-artifacts
           path: artifacts
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
           body: |
             ## GitHub Profile Manager ${{ github.ref_name }}
-            
+
             ### Installation
 
             #### Ubuntu/Debian
