@@ -1,49 +1,73 @@
-name: Build and Release Fyne App
+name: Release
 
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'  # Trigger on version tags like v1.0.0
 
 jobs:
-  build:
-    name: Build for ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+  build-linux:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Checkout source
+        uses: actions/checkout@v3
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v4
         with:
-          go-version: '1.24'
+          go-version: '1.21'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
 
       - name: Install Fyne CLI
-        run: go install fyne.io/fyne/v2/cmd/fyne@latest
-
-      - name: Build App
         run: |
-          go mod tidy
-          go install fyne.io/fyne/v2/cmd/fyne@latest
-          mkdir build
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            fyne package -os windows -name ghpm -release
-            mv ghpm.exe build/
-          elif [[ "${{ runner.os }}" == "macOS" ]]; then
-            fyne package -os darwin -name ghpm -release
-            mv ghpm.app build/
-          else
-            sudo apt update && sudo apt install -y libgl1-mesa-dev xorg-dev
-            fyne package -os linux -name ghpm -release
-            mv ghpm build/
-          fi
+          go install fyne.io/tools/cmd/fyne@latest
+        env:
+          PATH: ${{ env.PATH }}:$(go env GOPATH)/bin
 
-      - name: Upload Release Asset
+      - name: Build and package
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          make package-deb
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-artifacts
+          path: dist/*
+
+  create-release:
+    needs: build-linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: linux-artifacts
+          path: artifacts
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
-          files: build/*
+          files: artifacts/*
+          body: |
+            ## GitHub Profile Manager ${{ github.ref_name }}
+            
+            ### Installation
+
+            #### Ubuntu/Debian
+            Download the `.deb` file and install with:
+            ```bash
+            sudo dpkg -i github-profile-manager_*.deb
+            ```
+
+            ### Features
+            - Manage multiple GitHub profiles
+            - Switch between git configurations
+            - Manage SSH keys per profile
+            - Native desktop integration
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

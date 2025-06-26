@@ -214,3 +214,23 @@ func (c *Config) ExportProfile(name, exportDir string) error {
 
 	return nil
 }
+
+// ImportProfile imports a profile from a JSON file
+func (c *Config) ImportProfile(filePath string) (*Profile, error) {
+	profile, err := loadProfileFromFile(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to import profile: %w", err)
+	}
+
+	// Check for duplicate names
+	if _, exists := c.profiles[profile.Name]; exists {
+		return nil, fmt.Errorf("profile with name '%s' already exists", profile.Name)
+	}
+
+	// Add the imported profile
+	if err := c.AddProfile(profile); err != nil {
+		return nil, err
+	}
+
+	return profile, nil
+}
