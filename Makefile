@@ -25,7 +25,6 @@ all: deps test build
 
 deps:
 	go install fyne.io/tools/cmd/fyne@latest
-	go install github.com/fyne-io/fyne-cross@latest
 	$(GOGET) -u ./...
 
 clean:
@@ -43,19 +42,25 @@ build-linux:
 
 build-darwin-amd64:
 	@echo "Building for macOS Intel..."
-	@mkdir -p $(BUILD_DIR)/darwin-amd64
-	fyne-cross darwin -arch=amd64 -output $(APP_NAME) -app-id $(APP_ID) .
-	@mv fyne-cross/dist/darwin-amd64/ $(BUILD_DIR)/darwin-amd64/ || true
+	@if [ "$(uname)" = "Darwin" ]; then \
+		mkdir -p $(BUILD_DIR)/darwin-amd64; \
+		GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/darwin-amd64/$(APP_NAME) .; \
+	else \
+		echo "Skipping macOS build on non-macOS system. Use GitHub Actions for macOS builds."; \
+	fi
 
 build-darwin-arm64:
 	@echo "Building for macOS Apple Silicon..."
-	@mkdir -p $(BUILD_DIR)/darwin-arm64  
-	fyne-cross darwin -arch=arm64 -output $(APP_NAME) -app-id $(APP_ID) .
-	@mv fyne-cross/dist/darwin-arm64/ $(BUILD_DIR)/darwin-arm64/ || true
+	@if [ "$(uname)" = "Darwin" ]; then \
+		mkdir -p $(BUILD_DIR)/darwin-arm64; \
+		GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/darwin-arm64/$(APP_NAME) .; \
+	else \
+		echo "Skipping macOS build on non-macOS system. Use GitHub Actions for macOS builds."; \
+	fi
 
 build-darwin: build-darwin-amd64 build-darwin-arm64
 
-build: build-linux build-darwin
+build: build-linux
 
 # Packaging
 package-deb: build-linux
@@ -109,35 +114,51 @@ package-tar: build-linux
 		--release
 	@mv *.tar.xz $(DIST_DIR)/GitHubProfileManager-$(VERSION)-linux-amd64.tar.xz 2>/dev/null || true
 
-package-dmg-amd64: build-darwin-amd64
+package-dmg-amd64: 
 	@echo "Creating macOS DMG for Intel..."
-	@mkdir -p $(DIST_DIR)
-	@cd $(BUILD_DIR)/darwin-amd64 && \
-	hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg
+	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
+		mkdir -p $(DIST_DIR); \
+		cd $(BUILD_DIR)/darwin-amd64 && \
+		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg; \
+	else \
+		echo "macOS Intel build not found. Skipping DMG creation."; \
+	fi
 
-package-dmg-arm64: build-darwin-arm64
+package-dmg-arm64:
 	@echo "Creating macOS DMG for Apple Silicon..."
-	@mkdir -p $(DIST_DIR)
-	@cd $(BUILD_DIR)/darwin-arm64 && \
-	hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg
+	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
+		mkdir -p $(DIST_DIR); \
+		cd $(BUILD_DIR)/darwin-arm64 && \
+		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg; \
+	else \
+		echo "macOS ARM64 build not found. Skipping DMG creation."; \
+	fi
 
 package-dmg: package-dmg-amd64 package-dmg-arm64
 
-package-zip-amd64: build-darwin-amd64
+package-zip-amd64:
 	@echo "Creating macOS ZIP for Intel..."
-	@mkdir -p $(DIST_DIR)
-	@cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip .
+	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
+		mkdir -p $(DIST_DIR); \
+		cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip .; \
+	else \
+		echo "macOS Intel build not found. Skipping ZIP creation."; \
+	fi
 
-package-zip-arm64: build-darwin-arm64
+package-zip-arm64:
 	@echo "Creating macOS ZIP for Apple Silicon..."
-	@mkdir -p $(DIST_DIR)
-	@cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip .
+	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
+		mkdir -p $(DIST_DIR); \
+		cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip .; \
+	else \
+		echo "macOS ARM64 build not found. Skipping ZIP creation."; \
+	fi
 
 package-linux: package-deb package-tar
 
 package-darwin: package-dmg package-zip-amd64 package-zip-arm64
 
-package: package-linux package-darwin
+package: package-linux
 
 release: clean package
 	@echo "Release artifacts created in $(DIST_DIR)/"
