@@ -1,54 +1,57 @@
-package main
+package git
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
+
+	"github.com/huzaifanur/ghpm/pkg/logger"
 )
 
-// GitManager handles git and SSH operations
-type GitManager struct{}
+type Manager struct{}
 
-// NewGitManager creates a new GitManager instance
-func NewGitManager() *GitManager {
-	return &GitManager{}
+func NewManager() *Manager {
+	return &Manager{}
 }
 
-// SwitchProfile switches to the specified profile
-func (g *GitManager) SwitchProfile(p *Profile) error {
-	// Set git config
-	if err := g.setGitConfig(p.GitUsername, p.GitEmail); err != nil {
+func (g *Manager) SwitchProfile(profile ProfileInterface) error {
+	log := logger.New()
+	defer log.Close()
+
+	if err := g.setGitConfig(profile.GetGitUsername(), profile.GetGitEmail()); err != nil {
 		return fmt.Errorf("failed to set git config: %w", err)
 	}
 
-	// Handle SSH keys if provided
-	if p.HasSSHKeys() {
-		if err := p.WriteSSHKeysToSystem(); err != nil {
+	if profile.HasSSHKeys() {
+		if err := profile.WriteSSHKeysToSystem(); err != nil {
 			return fmt.Errorf("failed to write SSH keys: %w", err)
 		}
 
-		// Test SSH connection after writing keys
 		if err := g.TestSSHConnection(); err != nil {
-			log.Printf("Warning: SSH test failed after switching profile: %v", err)
+			log.Warnw("SSH test failed after switching profile", "error", err)
 		}
 	}
 
-	log.Printf("Switched to profile: %s (%s <%s>)", p.Name, p.GitUsername, p.GitEmail)
+	log.Infow("Switched to profile",
+		"name", profile.GetName(),
+		"username", profile.GetGitUsername(),
+		"email", profile.GetGitEmail())
 	return nil
 }
 
-// setGitConfig sets the global git username and email
-func (g *GitManager) setGitConfig(username, email string) error {
-	// Set username
+func (g *Manager) setGitConfig(username, email string) error {
+	if err := validateGitInput(username, email); err != nil {
+		return fmt.Errorf("invalid git configuration: %w", err)
+	}
+
 	cmd := exec.Command("git", "config", "--global", "user.name", username)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to set git username: %w", err)
 	}
 
-	// Set email
 	cmd = exec.Command("git", "config", "--global", "user.email", email)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to set git email: %w", err)
@@ -57,9 +60,7 @@ func (g *GitManager) setGitConfig(username, email string) error {
 	return nil
 }
 
-// GetCurrentGitConfig returns the current git configuration
-func (g *GitManager) GetCurrentGitConfig() (username, email string, err error) {
-	// Get username
+func (g *Manager) GetCurrentGitConfig() (username, email string, err error) {
 	cmd := exec.Command("git", "config", "--global", "user.name")
 	output, err := cmd.Output()
 	if err != nil {
@@ -67,7 +68,6 @@ func (g *GitManager) GetCurrentGitConfig() (username, email string, err error) {
 	}
 	username = strings.TrimSpace(string(output))
 
-	// Get email
 	cmd = exec.Command("git", "config", "--global", "user.email")
 	output, err = cmd.Output()
 	if err != nil {
@@ -78,39 +78,33 @@ func (g *GitManager) GetCurrentGitConfig() (username, email string, err error) {
 	return username, email, nil
 }
 
-// TestSSHConnection tests the SSH connection to GitHub
-func (g *GitManager) TestSSHConnection() error {
-	// First check if SSH keys exist
-	sshDir := os.ExpandEnv("$HOME/.ssh")
-	privateKeyPath := filepath.Join(sshDir, "id_rsa")
+func (g *Manager) TestSSHConnection() error {
+	privateKeyPath, _, err := detectSSHKeyPaths()
+	if err != nil {
+		return fmt.Errorf("no SSH keys found: %w", err)
+	}
 
 	if _, err := os.Stat(privateKeyPath); err != nil {
 		return fmt.Errorf("SSH private key not found at %s", privateKeyPath)
 	}
 
-	// Check private key permissions
 	if err := g.checkSSHKeyPermissions(); err != nil {
 		return fmt.Errorf("SSH key permissions error: %w", err)
 	}
 
-	// Test SSH connection
 	cmd := exec.Command("ssh", "-T", "-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "git@github.com")
 	output, err := cmd.CombinedOutput()
 
 	outputStr := string(output)
 
-	// SSH to GitHub returns exit code 1 even on successful authentication
-	// Check the output for successful authentication message
 	if containsSuccessMessage(outputStr) {
 		return nil
 	}
 
-	// If we have an error and no success message, include error info
 	if err != nil {
 		return fmt.Errorf("SSH command failed: %v, output: %s", err, outputStr)
 	}
 
-	// Check for common SSH errors
 	if strings.Contains(outputStr, "Permission denied") {
 		return fmt.Errorf("SSH authentication failed - check your SSH key")
 	}
@@ -126,13 +120,14 @@ func (g *GitManager) TestSSHConnection() error {
 	return fmt.Errorf("SSH test failed: %s", outputStr)
 }
 
-// checkSSHKeyPermissions ensures SSH keys have correct permissions
-func (g *GitManager) checkSSHKeyPermissions() error {
+func (g *Manager) checkSSHKeyPermissions() error {
 	sshDir := os.ExpandEnv("$HOME/.ssh")
-	privateKeyPath := filepath.Join(sshDir, "id_rsa")
-	publicKeyPath := filepath.Join(sshDir, "id_rsa.pub")
 
-	// Check SSH directory permissions (should be 700)
+	privateKeyPath, publicKeyPath, err := detectSSHKeyPaths()
+	if err != nil {
+		return fmt.Errorf("no SSH keys found: %w", err)
+	}
+
 	if info, err := os.Stat(sshDir); err == nil {
 		if info.Mode().Perm() != 0700 {
 			if err := os.Chmod(sshDir, 0700); err != nil {
@@ -141,7 +136,6 @@ func (g *GitManager) checkSSHKeyPermissions() error {
 		}
 	}
 
-	// Check private key permissions (should be 600)
 	if info, err := os.Stat(privateKeyPath); err == nil {
 		if info.Mode().Perm() != 0600 {
 			if err := os.Chmod(privateKeyPath, 0600); err != nil {
@@ -150,7 +144,6 @@ func (g *GitManager) checkSSHKeyPermissions() error {
 		}
 	}
 
-	// Check public key permissions (should be 644)
 	if info, err := os.Stat(publicKeyPath); err == nil {
 		if info.Mode().Perm() != 0644 {
 			if err := os.Chmod(publicKeyPath, 0644); err != nil {
@@ -162,9 +155,7 @@ func (g *GitManager) checkSSHKeyPermissions() error {
 	return nil
 }
 
-// containsSuccessMessage checks if the SSH output contains a success message
 func containsSuccessMessage(output string) bool {
-	// GitHub's successful authentication messages
 	successMessages := []string{
 		"successfully authenticated",
 		"You've successfully authenticated",
@@ -181,19 +172,16 @@ func containsSuccessMessage(output string) bool {
 	return false
 }
 
-// ValidateSSHKey validates SSH key format and content
-func (g *GitManager) ValidateSSHKey(keyContent string, isPrivate bool) error {
+func (g *Manager) ValidateSSHKey(keyContent string, isPrivate bool) error {
 	if strings.TrimSpace(keyContent) == "" {
 		return fmt.Errorf("SSH key content is empty")
 	}
 
 	if isPrivate {
-		// Check for private key markers
 		if !strings.Contains(keyContent, "BEGIN") || !strings.Contains(keyContent, "PRIVATE KEY") {
 			return fmt.Errorf("invalid private key format")
 		}
 	} else {
-		// Check for public key format
 		if !strings.HasPrefix(strings.TrimSpace(keyContent), "ssh-") {
 			return fmt.Errorf("invalid public key format")
 		}
@@ -202,10 +190,11 @@ func (g *GitManager) ValidateSSHKey(keyContent string, isPrivate bool) error {
 	return nil
 }
 
-// GetSSHKeyFingerprint gets the fingerprint of the current SSH key
-func (g *GitManager) GetSSHKeyFingerprint() (string, error) {
-	sshDir := os.ExpandEnv("$HOME/.ssh")
-	publicKeyPath := filepath.Join(sshDir, "id_rsa.pub")
+func (g *Manager) GetSSHKeyFingerprint() (string, error) {
+	_, publicKeyPath, err := detectSSHKeyPaths()
+	if err != nil {
+		return "", fmt.Errorf("no SSH keys found: %w", err)
+	}
 
 	if _, err := os.Stat(publicKeyPath); err != nil {
 		return "", fmt.Errorf("public key not found")
@@ -218,4 +207,49 @@ func (g *GitManager) GetSSHKeyFingerprint() (string, error) {
 	}
 
 	return strings.TrimSpace(string(output)), nil
+}
+
+func detectSSHKeyPaths() (string, string, error) {
+	sshDir := os.ExpandEnv("$HOME/.ssh")
+
+	keyTypes := []string{
+		"id_ed25519",
+		"id_ecdsa",
+		"id_rsa",
+		"id_dsa",
+	}
+
+	for _, keyType := range keyTypes {
+		privateKeyPath := filepath.Join(sshDir, keyType)
+		publicKeyPath := filepath.Join(sshDir, keyType+".pub")
+
+		if _, err := os.Stat(privateKeyPath); err == nil {
+			if _, err := os.Stat(publicKeyPath); err == nil {
+				return privateKeyPath, publicKeyPath, nil
+			}
+		}
+	}
+
+	return "", "", fmt.Errorf("no SSH key pair found")
+}
+
+func validateGitInput(username, email string) error {
+	usernamePattern := regexp.MustCompile(`^[a-zA-Z0-9\s._-]+$`)
+	if !usernamePattern.MatchString(username) {
+		return fmt.Errorf("invalid username: contains unsafe characters")
+	}
+
+	emailPattern := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	if !emailPattern.MatchString(email) {
+		return fmt.Errorf("invalid email format")
+	}
+
+	if len(username) > 100 {
+		return fmt.Errorf("username too long (max 100 characters)")
+	}
+	if len(email) > 254 {
+		return fmt.Errorf("email too long (max 254 characters)")
+	}
+
+	return nil
 }
