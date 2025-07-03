@@ -18,9 +18,8 @@ BUILD_DIR    = build
 DIST_DIR     = dist
 DEB_DIR      = $(BUILD_DIR)/deb
 BIN_PATH     = $(BUILD_DIR)/linux/$(APP_NAME)
-MAIN_PATH    = ./cmd/ghpm
 
-.PHONY: all clean deps test build-linux build-darwin build-darwin-amd64 build-darwin-arm64 build package-deb package-tar package-dmg package-dmg-amd64 package-dmg-arm64 package-zip-amd64 package-zip-arm64 package-linux package-darwin package release lint fmt
+.PHONY: all clean deps test build-linux build-darwin build-darwin-amd64 build-darwin-arm64 build package-deb package-tar package-dmg package-dmg-amd64 package-dmg-arm64 package-zip-amd64 package-zip-arm64 package-linux package-darwin package release
 
 all: deps test build
 
@@ -35,48 +34,21 @@ clean:
 test:
 	$(GOTEST) -v ./...
 
-# Development targets
-fmt:
-	@echo "Formatting code..."
-	go fmt ./...
-
-lint:
-	@echo "Running linter..."
-	golangci-lint run
-
-dev: fmt
-	@echo "Running in development mode..."
-	go run $(MAIN_PATH)
-
 # Cross-compilation
 build-linux:
 	@echo "Building for Linux..."
 	@mkdir -p $(BUILD_DIR)/linux
-	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BIN_PATH) $(MAIN_PATH)
+	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BIN_PATH) ./cmd/ghpm
 
 build-darwin-amd64:
 	@echo "Building for macOS Intel..."
-	$(FYNE) package -os darwin -arch amd64 \
-		--name "GitHub Profile Manager" \
-		--app-id $(APP_ID) \
-		--app-version $(VERSION) \
-		--source-dir . \
-		--executable $(MAIN_PATH) \
-		--icon logo.png \
-		--release \
-		--output $(BUILD_DIR)/darwin-amd64/$(APP_NAME).app
+	@mkdir -p $(BUILD_DIR)/darwin-amd64
+	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/darwin-amd64/$(APP_NAME) ./cmd/ghpm
 
 build-darwin-arm64:
 	@echo "Building for macOS Apple Silicon..."
-	$(FYNE) package -os darwin -arch arm64 \
-		--name "GitHub Profile Manager" \
-		--app-id $(APP_ID) \
-		--app-version $(VERSION) \
-		--source-dir . \
-		--executable $(MAIN_PATH) \
-		--icon logo.png \
-		--release \
-		--output $(BUILD_DIR)/darwin-arm64/$(APP_NAME).app
+	@mkdir -p $(BUILD_DIR)/darwin-arm64
+	GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/darwin-arm64/$(APP_NAME) ./cmd/ghpm
 
 build-darwin: build-darwin-amd64 build-darwin-arm64
 
@@ -134,22 +106,28 @@ package-tar: build-linux
 		--release
 	@mv *.tar.xz $(DIST_DIR)/GitHubProfileManager-$(VERSION)-linux-amd64.tar.xz 2>/dev/null || true
 
-package-dmg-amd64:
+package-dmg-amd64: 
 	@echo "Creating macOS DMG for Intel..."
-	@if [ -f "$(BUILD_DIR)/darwin-amd64/$(APP_NAME).app" ]; then \
+	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
 		mkdir -p $(DIST_DIR); \
-		hdiutil create -volname "$(APP_NAME)" -srcfolder "$(BUILD_DIR)/darwin-amd64/$(APP_NAME).app" -ov -format UDZO $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg; \
+		echo "Contents of $(BUILD_DIR)/darwin-amd64:"; \
+		ls -la $(BUILD_DIR)/darwin-amd64/; \
+		cd $(BUILD_DIR)/darwin-amd64 && \
+		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg; \
 	else \
-		echo "macOS Intel .app build not found. Skipping DMG creation."; \
+		echo "macOS Intel build not found. Skipping DMG creation."; \
 	fi
 
 package-dmg-arm64:
 	@echo "Creating macOS DMG for Apple Silicon..."
-	@if [ -f "$(BUILD_DIR)/darwin-arm64/$(APP_NAME).app" ]; then \
+	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
 		mkdir -p $(DIST_DIR); \
-		hdiutil create -volname "$(APP_NAME)" -srcfolder "$(BUILD_DIR)/darwin-arm64/$(APP_NAME).app" -ov -format UDZO $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg; \
+		echo "Contents of $(BUILD_DIR)/darwin-arm64:"; \
+		ls -la $(BUILD_DIR)/darwin-arm64/; \
+		cd $(BUILD_DIR)/darwin-arm64 && \
+		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg; \
 	else \
-		echo "macOS ARM64 .app build not found. Skipping DMG creation."; \
+		echo "macOS ARM64 build not found. Skipping DMG creation."; \
 	fi
 
 package-dmg: package-dmg-amd64 package-dmg-arm64
@@ -157,23 +135,32 @@ package-dmg: package-dmg-amd64 package-dmg-arm64
 package-zip-amd64:
 	@echo "Creating macOS ZIP for Intel..."
 	@mkdir -p $(DIST_DIR)
-	@if [ -d "$(BUILD_DIR)/darwin-amd64/$(APP_NAME).app" ]; then \
-		cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip $(APP_NAME).app; \
+	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
+		echo "Contents of $(BUILD_DIR)/darwin-amd64:"; \
+		ls -la $(BUILD_DIR)/darwin-amd64/; \
+		cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip .; \
+	elif [ -f "$(BUILD_DIR)/darwin-amd64/$(APP_NAME)" ]; then \
+		echo "Creating ZIP from binary only"; \
+		cd $(BUILD_DIR)/darwin-amd64 && zip ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip $(APP_NAME); \
 	else \
-		echo "macOS Intel .app build not found. Creating empty marker file."; \
+		echo "macOS Intel build not found. Creating empty marker file."; \
 		echo "macOS Intel build failed" > $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.txt; \
 	fi
 
 package-zip-arm64:
 	@echo "Creating macOS ZIP for Apple Silicon..."
 	@mkdir -p $(DIST_DIR)
-	@if [ -d "$(BUILD_DIR)/darwin-arm64/$(APP_NAME).app" ]; then \
-		cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip $(APP_NAME).app; \
+	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
+		echo "Contents of $(BUILD_DIR)/darwin-arm64:"; \
+		ls -la $(BUILD_DIR)/darwin-arm64/; \
+		cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip .; \
+	elif [ -f "$(BUILD_DIR)/darwin-arm64/$(APP_NAME)" ]; then \
+		echo "Creating ZIP from binary only"; \
+		cd $(BUILD_DIR)/darwin-arm64 && zip ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip $(APP_NAME); \
 	else \
-		echo "macOS ARM64 .app build not found. Creating empty marker file."; \
+		echo "macOS ARM64 build not found. Creating empty marker file."; \
 		echo "macOS ARM64 build failed" > $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.txt; \
 	fi
-
 
 package-darwin-amd64: 
 	@echo "Packaging macOS Intel..."
