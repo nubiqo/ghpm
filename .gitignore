@@ -4,7 +4,11 @@
 *.dll
 *.so
 *.dylib
-ghpm
+
+# Ignore the built binary, but not the source directory
+/ghpm
+github-profile-manager
+
 # Test binary, built with `go test -c`
 *.test
 
