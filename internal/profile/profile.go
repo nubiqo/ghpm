@@ -1,13 +1,12 @@
 package profile
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
+    "fmt"
+    "os"
+    "path/filepath"
+    "strings"
 
-	"github.com/huzaifanur/ghpm/internal/git"
+    "github.com/huzaifanur/ghpm/internal/git"
 )
 
 type Profile struct {
@@ -18,27 +17,6 @@ type Profile struct {
 	SSHPublicKey  string `json:"ssh_public_key"`
 	IsActive      bool   `json:"is_active"`
 	CreatedFrom   string `json:"created_from"`
-}
-
-func validateGitInput(username, email string) error {
-	usernamePattern := regexp.MustCompile(`^[a-zA-Z0-9\s._-]+$`)
-	if !usernamePattern.MatchString(username) {
-		return fmt.Errorf("invalid username: contains unsafe characters")
-	}
-
-	emailPattern := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-	if !emailPattern.MatchString(email) {
-		return fmt.Errorf("invalid email format")
-	}
-
-	if len(username) > 100 {
-		return fmt.Errorf("username too long (max 100 characters)")
-	}
-	if len(email) > 254 {
-		return fmt.Errorf("email too long (max 254 characters)")
-	}
-
-	return nil
 }
 
 func (p *Profile) Validate() error {
@@ -56,39 +34,16 @@ func (p *Profile) Validate() error {
 		return fmt.Errorf("profile name contains invalid characters")
 	}
 
-	if err := validateGitInput(p.GitUsername, p.GitEmail); err != nil {
-		return fmt.Errorf("invalid git configuration: %w", err)
-	}
+    if err := git.ValidateGitInput(p.GitUsername, p.GitEmail); err != nil {
+        return fmt.Errorf("invalid git configuration: %w", err)
+    }
 
-	if p.SSHPrivateKey == "" || p.SSHPublicKey == "" {
-		return fmt.Errorf("SSH private and public keys are required")
-	}
+    // SSH keys are mandatory for a valid profile
+    if p.SSHPrivateKey == "" || p.SSHPublicKey == "" {
+        return fmt.Errorf("SSH private and public keys are required")
+    }
 
-	return nil
-}
-
-func detectSSHKeyPaths() (string, string, error) {
-	sshDir := os.ExpandEnv("$HOME/.ssh")
-
-	keyTypes := []string{
-		"id_ed25519",
-		"id_ecdsa",
-		"id_rsa",
-		"id_dsa",
-	}
-
-	for _, keyType := range keyTypes {
-		privateKeyPath := filepath.Join(sshDir, keyType)
-		publicKeyPath := filepath.Join(sshDir, keyType+".pub")
-
-		if _, err := os.Stat(privateKeyPath); err == nil {
-			if _, err := os.Stat(publicKeyPath); err == nil {
-				return privateKeyPath, publicKeyPath, nil
-			}
-		}
-	}
-
-	return "", "", fmt.Errorf("no SSH key pair found")
+    return nil
 }
 
 func (p *Profile) HasSSHKeys() bool {
@@ -229,18 +184,17 @@ func CreateFromSystem(name string) (*Profile, error) {
 	profile.GitUsername = username
 	profile.GitEmail = email
 
-	privateKeyPath, publicKeyPath, err := detectSSHKeyPaths()
-	if err != nil {
-		return nil, fmt.Errorf("failed to detect SSH keys: %w", err)
-	}
-
-	if data, err := os.ReadFile(privateKeyPath); err == nil {
-		profile.SSHPrivateKey = string(data)
-	}
-
-	if data, err := os.ReadFile(publicKeyPath); err == nil {
-		profile.SSHPublicKey = string(data)
-	}
+    // Detect SSH keys; fail if not present as keys are mandatory
+    privateKeyPath, publicKeyPath, err := git.DetectSSHKeyPaths()
+    if err != nil {
+        return nil, fmt.Errorf("failed to detect SSH keys: %w", err)
+    }
+    if data, err := os.ReadFile(privateKeyPath); err == nil {
+        profile.SSHPrivateKey = string(data)
+    }
+    if data, err := os.ReadFile(publicKeyPath); err == nil {
+        profile.SSHPublicKey = string(data)
+    }
 
 	return profile, nil
 }

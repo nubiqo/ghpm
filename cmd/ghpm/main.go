@@ -20,5 +20,3 @@ func main() {
 	mainUI := ui.NewUI(fyneApp, cfg)
 	mainUI.Show()
 }
-
-// xasxa

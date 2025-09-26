@@ -1,21 +1,28 @@
 package ui
 
 import (
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/theme"
-	"fyne.io/fyne/v2/widget"
-	"github.com/huzaifanur/ghpm/internal/profile"
-	"github.com/huzaifanur/ghpm/internal/ui/actions"
-	"github.com/huzaifanur/ghpm/internal/ui/dialogs"
+    "fyne.io/fyne/v2"
+    "fyne.io/fyne/v2/container"
+    "fyne.io/fyne/v2/theme"
+    "fyne.io/fyne/v2/widget"
+    "github.com/huzaifanur/ghpm/internal/config"
+    "github.com/huzaifanur/ghpm/internal/profile"
+    "github.com/huzaifanur/ghpm/internal/ui/actions"
+    "github.com/huzaifanur/ghpm/internal/ui/dialogs"
 )
 
 type Toolbar struct {
-	ui             *UI
-	container      *fyne.Container
-	profileActions *actions.ProfileActions
-	profileDialog  *dialogs.ProfileDialog
-	detectDialog   *dialogs.DetectDialog
+    ui             *UI
+    container      *fyne.Container
+    profileActions *actions.ProfileActions
+    profileDialog  *dialogs.ProfileDialog
+    detectDialog   *dialogs.DetectDialog
+
+    // buttons that depend on selection
+    btnEdit    *widget.Button
+    btnDelete  *widget.Button
+    btnExport  *widget.Button
+    btnSwitch  *widget.Button
 }
 
 func NewToolbar(ui *UI) *Toolbar {
@@ -43,41 +50,52 @@ func (tb *Toolbar) initializeComponents() {
 	)
 }
 
+// UpdateConfig ensures nested components always use the latest cfg instance
+func (tb *Toolbar) UpdateConfig(cfg *config.Config) {
+    if tb.profileActions != nil {
+        tb.profileActions.SetConfig(cfg)
+    }
+    if tb.detectDialog != nil {
+        tb.detectDialog.SetConfig(cfg)
+    }
+}
+
 func (tb *Toolbar) createToolbar() {
-	// Main action buttons
-	addBtn := widget.NewButtonWithIcon("Add Profile", theme.ContentAddIcon(), tb.showAddProfileDialog)
-	detectBtn := widget.NewButtonWithIcon("Detect Current", theme.SearchIcon(), tb.detectCurrentProfile)
+    // Main action buttons
+    addBtn := widget.NewButtonWithIcon("Add Profile", theme.ContentAddIcon(), tb.showAddProfileDialog)
+    detectBtn := widget.NewButtonWithIcon("Detect Current", theme.SearchIcon(), tb.detectCurrentProfile)
 
-	// Profile management buttons
-	editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), tb.showEditProfileDialog)
-	deleteBtn := widget.NewButtonWithIcon("Delete", theme.DeleteIcon(), tb.deleteProfile)
-	importBtn := widget.NewButtonWithIcon("Import", theme.UploadIcon(), tb.importProfile)
-	exportBtn := widget.NewButtonWithIcon("Export", theme.DownloadIcon(), tb.exportProfile)
+    // Profile management buttons
+    tb.btnEdit = widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), tb.showEditProfileDialog)
+    tb.btnDelete = widget.NewButtonWithIcon("Delete", theme.DeleteIcon(), tb.deleteProfile)
+    importBtn := widget.NewButtonWithIcon("Import", theme.UploadIcon(), tb.importProfile)
+    tb.btnExport = widget.NewButtonWithIcon("Export", theme.DownloadIcon(), tb.exportProfile)
 
-	// Operation buttons
-	switchBtn := widget.NewButtonWithIcon("Switch Profile", theme.ConfirmIcon(), tb.switchProfile)
-	testSSHBtn := widget.NewButtonWithIcon("Test SSH", theme.ComputerIcon(), tb.testSSH)
-	refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), tb.refresh)
+    // Operation buttons
+    tb.btnSwitch = widget.NewButtonWithIcon("Switch Profile", theme.ConfirmIcon(), tb.switchProfile)
+    testSSHBtn := widget.NewButtonWithIcon("Test SSH", theme.ComputerIcon(), tb.testSSH)
+    refreshBtn := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), tb.refresh)
 
 	// Button layout
-	topButtonBar := container.NewHBox(
-		addBtn,
-		detectBtn,
-		widget.NewSeparator(),
-		editBtn,
-		deleteBtn,
-		importBtn,
-		exportBtn,
-	)
+    topButtonBar := container.NewHBox(
+        addBtn,
+        detectBtn,
+        widget.NewSeparator(),
+        tb.btnEdit,
+        tb.btnDelete,
+        importBtn,
+        tb.btnExport,
+    )
 
-	bottomButtonBar := container.NewHBox(
-		switchBtn,
-		testSSHBtn,
-		widget.NewSeparator(),
-		refreshBtn,
-	)
+    bottomButtonBar := container.NewHBox(
+        tb.btnSwitch,
+        testSSHBtn,
+        widget.NewSeparator(),
+        refreshBtn,
+    )
 
-	tb.container = container.NewVBox(topButtonBar, bottomButtonBar)
+    tb.container = container.NewVBox(topButtonBar, bottomButtonBar)
+    tb.UpdateButtonStates()
 }
 
 func (tb *Toolbar) Widget() fyne.CanvasObject {
@@ -159,4 +177,37 @@ func (tb *Toolbar) getSelectedProfile() *profile.Profile {
 	}
 
 	return profiles[selectedItem]
+}
+
+// UpdateButtonStates enables/disables buttons that depend on a selection
+func (tb *Toolbar) UpdateButtonStates() {
+    hasSelection := tb.getSelectedProfile() != nil
+    if tb.btnEdit != nil {
+        if hasSelection {
+            tb.btnEdit.Enable()
+        } else {
+            tb.btnEdit.Disable()
+        }
+    }
+    if tb.btnDelete != nil {
+        if hasSelection {
+            tb.btnDelete.Enable()
+        } else {
+            tb.btnDelete.Disable()
+        }
+    }
+    if tb.btnExport != nil {
+        if hasSelection {
+            tb.btnExport.Enable()
+        } else {
+            tb.btnExport.Disable()
+        }
+    }
+    if tb.btnSwitch != nil {
+        if hasSelection {
+            tb.btnSwitch.Enable()
+        } else {
+            tb.btnSwitch.Disable()
+        }
+    }
 }

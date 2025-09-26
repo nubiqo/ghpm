@@ -1,14 +1,15 @@
 package dialogs
 
 import (
-	"fmt"
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
-	"github.com/huzaifanur/ghpm/internal/git"
-	"github.com/huzaifanur/ghpm/internal/profile"
-	"io"
+    "fmt"
+    "io"
+
+    "fyne.io/fyne/v2"
+    "fyne.io/fyne/v2/container"
+    "fyne.io/fyne/v2/dialog"
+    "fyne.io/fyne/v2/widget"
+    "github.com/huzaifanur/ghpm/internal/git"
+    "github.com/huzaifanur/ghpm/internal/profile"
 )
 
 type ProfileDialog struct {
@@ -75,12 +76,12 @@ func (pd *ProfileDialog) Show(editProfile *profile.Profile, title string, onSave
 		fileDialog.Show()
 	})
 
-	selectPublicBtn := widget.NewButton("Select Public Key", func() {
-		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err != nil || reader == nil {
-				return
-			}
-			defer reader.Close()
+    selectPublicBtn := widget.NewButton("Select Public Key", func() {
+        fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+            if err != nil || reader == nil {
+                return
+            }
+            defer reader.Close()
 
 			keyContent, err := pd.readSSHKeyFile(reader, false)
 			if err != nil {
@@ -96,9 +97,47 @@ func (pd *ProfileDialog) Show(editProfile *profile.Profile, title string, onSave
 			publicKeyContent = keyContent
 			publicKeyLabel.SetText(fmt.Sprintf("Loaded: %s", reader.URI().Path()))
 		}, pd.window)
-		fileDialog.Resize(fyne.NewSize(800, 600))
-		fileDialog.Show()
-	})
+        fileDialog.Resize(fyne.NewSize(800, 600))
+        fileDialog.Show()
+    })
+
+    pastePrivateBtn := widget.NewButton("Paste Private Key", func() {
+        entry := widget.NewMultiLineEntry()
+        entry.SetPlaceHolder("Paste your private key, including BEGIN/END lines")
+        dlg := dialog.NewCustomConfirm("Paste Private Key", "Use", "Cancel", entry, func(ok bool) {
+            if !ok {
+                return
+            }
+            keyContent := entry.Text
+            if err := pd.gitManager.ValidateSSHKey(keyContent, true); err != nil {
+                dialog.ShowError(fmt.Errorf("invalid private key: %w", err), pd.window)
+                return
+            }
+            privateKeyContent = keyContent
+            privateKeyLabel.SetText("Private key pasted")
+        }, pd.window)
+        dlg.Resize(fyne.NewSize(700, 500))
+        dlg.Show()
+    })
+
+    pastePublicBtn := widget.NewButton("Paste Public Key", func() {
+        entry := widget.NewMultiLineEntry()
+        entry.SetPlaceHolder("Paste your public key (ssh-...)")
+        dlg := dialog.NewCustomConfirm("Paste Public Key", "Use", "Cancel", entry, func(ok bool) {
+            if !ok {
+                return
+            }
+            keyContent := entry.Text
+            if err := pd.gitManager.ValidateSSHKey(keyContent, false); err != nil {
+                dialog.ShowError(fmt.Errorf("invalid public key: %w", err), pd.window)
+                return
+            }
+            publicKeyContent = keyContent
+            publicKeyLabel.SetText("Public key pasted")
+        }, pd.window)
+        dlg.Resize(fyne.NewSize(700, 400))
+        dlg.Show()
+    })
 
 	form := widget.NewForm(
 		widget.NewFormItem("Profile Name*", nameEntry),
@@ -106,11 +145,11 @@ func (pd *ProfileDialog) Show(editProfile *profile.Profile, title string, onSave
 		widget.NewFormItem("Git Email*", emailEntry),
 	)
 
-	sshContainer := container.NewVBox(
-		widget.NewLabel("SSH Keys*"),
-		container.NewBorder(nil, nil, selectPrivateBtn, nil, privateKeyLabel),
-		container.NewBorder(nil, nil, selectPublicBtn, nil, publicKeyLabel),
-	)
+    sshContainer := container.NewVBox(
+        widget.NewLabel("SSH Keys*"),
+        container.NewBorder(nil, nil, container.NewHBox(selectPrivateBtn, pastePrivateBtn), nil, privateKeyLabel),
+        container.NewBorder(nil, nil, container.NewHBox(selectPublicBtn, pastePublicBtn), nil, publicKeyLabel),
+    )
 
 	helpText := widget.NewLabel("* Required fields")
 	helpText.TextStyle = fyne.TextStyle{Italic: true}

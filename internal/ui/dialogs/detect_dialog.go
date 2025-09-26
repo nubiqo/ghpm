@@ -2,6 +2,7 @@ package dialogs
 
 import (
 	"fmt"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -25,12 +26,22 @@ func NewDetectDialog(window fyne.Window, config *config.Config, logger *logger.L
 	}
 }
 
+func (dd *DetectDialog) SetConfig(cfg *config.Config) {
+	dd.config = cfg
+}
+
 func (dd *DetectDialog) Show(onProfileCreated func()) {
-	detectedProfile, err := profile.CreateFromSystem("temp")
-	if err != nil {
-		dialog.ShowError(fmt.Errorf("failed to detect configuration: %w", err), dd.window)
-		return
-	}
+    detectedProfile, err := profile.CreateFromSystem("temp")
+    if err != nil {
+        dialog.ShowError(fmt.Errorf("failed to detect configuration: %w", err), dd.window)
+        dialog.ShowInformation(
+            "SSH Keys Required",
+            "SSH keys are required and were not found.\n"+
+                "Please generate keys (ssh-keygen) or use 'Add Profile' to select existing keys.",
+            dd.window,
+        )
+        return
+    }
 
 	previewText := fmt.Sprintf("Git Configuration:\n• Username: %s\n• Email: %s\n\n", detectedProfile.GitUsername, detectedProfile.GitEmail)
 

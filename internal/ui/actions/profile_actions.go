@@ -2,13 +2,14 @@ package actions
 
 import (
 	"fmt"
+	"path/filepath"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
 	"github.com/huzaifanur/ghpm/internal/config"
 	"github.com/huzaifanur/ghpm/internal/git"
 	"github.com/huzaifanur/ghpm/internal/profile"
 	"github.com/huzaifanur/ghpm/pkg/logger"
-	"path/filepath"
 )
 
 type ProfileActions struct {
@@ -25,6 +26,10 @@ func NewProfileActions(window fyne.Window, config *config.Config, gitManager *gi
 		gitManager: gitManager,
 		logger:     logger,
 	}
+}
+
+func (pa *ProfileActions) SetConfig(cfg *config.Config) {
+	pa.config = cfg
 }
 
 func (pa *ProfileActions) Import(onComplete func()) {

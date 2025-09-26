@@ -9,12 +9,13 @@ import (
 )
 
 type ProfileList struct {
-	ui   *UI
-	list *widget.List
+	ui           *UI
+	list         *widget.List
+	lastSelected int
 }
 
 func NewProfileList(ui *UI) *ProfileList {
-	pl := &ProfileList{ui: ui}
+	pl := &ProfileList{ui: ui, lastSelected: -1}
 	pl.createList()
 	return pl
 }
@@ -45,7 +46,8 @@ func (pl *ProfileList) createList() {
 			nameLabel := c.Objects[1].(*widget.Label)
 			statusLabel := c.Objects[3].(*widget.Label)
 
-			nameLabel.SetText(profile.String())
+			// Show profile name; details are visible in status panel
+			nameLabel.SetText(profile.Name)
 
 			if profile.IsActive {
 				statusLabel.SetText("ACTIVE")
@@ -59,13 +61,21 @@ func (pl *ProfileList) createList() {
 		},
 	)
 
-	pl.list.OnSelected = func(id widget.ListItemID) {
-		pl.ui.SetSelectedItem(id)
-	}
+    pl.list.OnSelected = func(id widget.ListItemID) {
+        pl.ui.SetSelectedItem(id)
+        pl.lastSelected = id
+        if pl.ui.toolbar != nil {
+            pl.ui.toolbar.UpdateButtonStates()
+        }
+    }
 
-	pl.list.OnUnselected = func(id widget.ListItemID) {
-		pl.ui.SetSelectedItem(-1)
-	}
+    pl.list.OnUnselected = func(id widget.ListItemID) {
+        pl.ui.SetSelectedItem(-1)
+        pl.lastSelected = -1
+        if pl.ui.toolbar != nil {
+            pl.ui.toolbar.UpdateButtonStates()
+        }
+    }
 }
 
 func (pl *ProfileList) Widget() fyne.CanvasObject {
@@ -77,6 +87,9 @@ func (pl *ProfileList) Refresh() {
 	if pl.ui.GetSelectedItem() != -1 {
 		pl.list.Select(pl.ui.GetSelectedItem())
 	} else {
-		pl.list.Unselect(-1)
+		if pl.lastSelected != -1 {
+			pl.list.Unselect(pl.lastSelected)
+			pl.lastSelected = -1
+		}
 	}
 }

@@ -43,9 +43,9 @@ func (g *Manager) SwitchProfile(profile ProfileInterface) error {
 }
 
 func (g *Manager) setGitConfig(username, email string) error {
-	if err := validateGitInput(username, email); err != nil {
-		return fmt.Errorf("invalid git configuration: %w", err)
-	}
+    if err := ValidateGitInput(username, email); err != nil {
+        return fmt.Errorf("invalid git configuration: %w", err)
+    }
 
 	cmd := exec.Command("git", "config", "--global", "user.name", username)
 	if err := cmd.Run(); err != nil {
@@ -79,7 +79,7 @@ func (g *Manager) GetCurrentGitConfig() (username, email string, err error) {
 }
 
 func (g *Manager) TestSSHConnection() error {
-	privateKeyPath, _, err := detectSSHKeyPaths()
+    privateKeyPath, _, err := DetectSSHKeyPaths()
 	if err != nil {
 		return fmt.Errorf("no SSH keys found: %w", err)
 	}
@@ -123,7 +123,7 @@ func (g *Manager) TestSSHConnection() error {
 func (g *Manager) checkSSHKeyPermissions() error {
 	sshDir := os.ExpandEnv("$HOME/.ssh")
 
-	privateKeyPath, publicKeyPath, err := detectSSHKeyPaths()
+    privateKeyPath, publicKeyPath, err := DetectSSHKeyPaths()
 	if err != nil {
 		return fmt.Errorf("no SSH keys found: %w", err)
 	}
@@ -191,7 +191,7 @@ func (g *Manager) ValidateSSHKey(keyContent string, isPrivate bool) error {
 }
 
 func (g *Manager) GetSSHKeyFingerprint() (string, error) {
-	_, publicKeyPath, err := detectSSHKeyPaths()
+    _, publicKeyPath, err := DetectSSHKeyPaths()
 	if err != nil {
 		return "", fmt.Errorf("no SSH keys found: %w", err)
 	}
@@ -209,7 +209,7 @@ func (g *Manager) GetSSHKeyFingerprint() (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-func detectSSHKeyPaths() (string, string, error) {
+func DetectSSHKeyPaths() (string, string, error) {
 	sshDir := os.ExpandEnv("$HOME/.ssh")
 
 	keyTypes := []string{
@@ -233,7 +233,7 @@ func detectSSHKeyPaths() (string, string, error) {
 	return "", "", fmt.Errorf("no SSH key pair found")
 }
 
-func validateGitInput(username, email string) error {
+func ValidateGitInput(username, email string) error {
 	usernamePattern := regexp.MustCompile(`^[a-zA-Z0-9\s._-]+$`)
 	if !usernamePattern.MatchString(username) {
 		return fmt.Errorf("invalid username: contains unsafe characters")

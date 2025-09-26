@@ -13,7 +13,7 @@ import (
 )
 
 type Config struct {
-	profiles sync.Map
+	profiles  sync.Map
 	configDir string
 }
 
@@ -59,10 +59,10 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	files, err := os.ReadDir(config.configDir)
-	if err != nil {
-		return config, nil
-	}
+    files, err := os.ReadDir(config.configDir)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read config directory: %w", err)
+    }
 
 	var activeProfileFound bool
 	for _, file := range files {
@@ -75,7 +75,7 @@ func LoadConfig() (*Config, error) {
 
 			if p.IsActive {
 				if activeProfileFound {
-					p.IsActive = false // Deactivate if another active profile already found
+					p.IsActive = false          // Deactivate if another active profile already found
 					config.saveProfileToFile(p) // Save the deactivated profile
 				} else {
 					activeProfileFound = true
@@ -125,6 +125,12 @@ func (c *Config) AddProfile(p *profile.Profile) error {
 }
 
 func (c *Config) UpdateProfile(oldName string, p *profile.Profile) error {
+	// Preserve active flag from existing profile (including rename cases)
+	if existingVal, ok := c.profiles.Load(oldName); ok {
+		if existing, ok2 := existingVal.(*profile.Profile); ok2 {
+			p.IsActive = existing.IsActive
+		}
+	}
 	if oldName != p.Name {
 		if _, exists := c.profiles.Load(p.Name); exists {
 			return fmt.Errorf("profile with name '%s' already exists", p.Name)
@@ -221,8 +227,32 @@ func (c *Config) saveProfileToFile(p *profile.Profile) error {
 		return fmt.Errorf("failed to marshal profile: %w", err)
 	}
 
-	if err := os.WriteFile(profilePath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write profile file: %w", err)
+	// atomic write to avoid partial/corrupt files
+	dir := filepath.Dir(profilePath)
+	tmp, err := os.CreateTemp(dir, filepath.Base(profilePath)+".tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		tmp.Close()
+		os.Remove(tmpPath)
+	}()
+
+	if _, err := tmp.Write(data); err != nil {
+		return fmt.Errorf("failed writing temp file: %w", err)
+	}
+	if err := tmp.Chmod(0600); err != nil {
+		return fmt.Errorf("failed to set file permissions: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("failed to sync temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+	if err := os.Rename(tmpPath, profilePath); err != nil {
+		return fmt.Errorf("failed to replace profile file: %w", err)
 	}
 
 	return nil

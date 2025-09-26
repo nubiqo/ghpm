@@ -1,7 +1,8 @@
 # App Metadata
 APP_NAME     = github-profile-manager
 APP_ID       = com.ghpm.app
-VERSION      = 0.0.10
+VERSION      = 0.0.11
+LD_FLAGS     = -X github.com/huzaifanur/ghpm/pkg/version.Version=$(VERSION)
 
 # Go
 GOCMD        = go
@@ -19,7 +20,7 @@ DIST_DIR     = dist
 DEB_DIR      = $(BUILD_DIR)/deb
 BIN_PATH     = $(BUILD_DIR)/linux/$(APP_NAME)
 
-.PHONY: all clean deps test build-linux build-darwin build-darwin-amd64 build-darwin-arm64 build package-deb package-tar package-dmg package-dmg-amd64 package-dmg-arm64 package-zip-amd64 package-zip-arm64 package-linux package-darwin package release
+.PHONY: all clean deps test build-linux build-darwin build-darwin-amd64 build-darwin-arm64 build package-deb package-tar package-darwin-amd64 package-darwin-arm64 package-linux package-darwin package release
 
 all: deps test build
 
@@ -38,17 +39,17 @@ test:
 build-linux:
 	@echo "Building for Linux..."
 	@mkdir -p $(BUILD_DIR)/linux
-	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BIN_PATH) ./cmd/ghpm
+	GOOS=linux GOARCH=amd64 $(GOBUILD) -ldflags "$(LD_FLAGS)" -o $(BIN_PATH) ./cmd/ghpm
 
 build-darwin-amd64:
 	@echo "Building for macOS Intel..."
 	@mkdir -p $(BUILD_DIR)/darwin-amd64
-	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/darwin-amd64/$(APP_NAME) ./cmd/ghpm
+	GOOS=darwin GOARCH=amd64 $(GOBUILD) -ldflags "$(LD_FLAGS)" -o $(BUILD_DIR)/darwin-amd64/$(APP_NAME) ./cmd/ghpm
 
 build-darwin-arm64:
 	@echo "Building for macOS Apple Silicon..."
 	@mkdir -p $(BUILD_DIR)/darwin-arm64
-	GOOS=darwin GOARCH=arm64 $(GOBUILD) -o $(BUILD_DIR)/darwin-arm64/$(APP_NAME) ./cmd/ghpm
+	GOOS=darwin GOARCH=arm64 $(GOBUILD) -ldflags "$(LD_FLAGS)" -o $(BUILD_DIR)/darwin-arm64/$(APP_NAME) ./cmd/ghpm
 
 build-darwin: build-darwin-amd64 build-darwin-arm64
 
@@ -106,85 +107,37 @@ package-tar: build-linux
 		--release
 	@mv *.tar.xz $(DIST_DIR)/GitHubProfileManager-$(VERSION)-linux-amd64.tar.xz 2>/dev/null || true
 
-package-dmg-amd64: 
-	@echo "Creating macOS DMG for Intel..."
-	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
-		mkdir -p $(DIST_DIR); \
-		echo "Contents of $(BUILD_DIR)/darwin-amd64:"; \
-		ls -la $(BUILD_DIR)/darwin-amd64/; \
-		cd $(BUILD_DIR)/darwin-amd64 && \
-		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.dmg; \
-	else \
-		echo "macOS Intel build not found. Skipping DMG creation."; \
-	fi
-
-package-dmg-arm64:
-	@echo "Creating macOS DMG for Apple Silicon..."
-	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
-		mkdir -p $(DIST_DIR); \
-		echo "Contents of $(BUILD_DIR)/darwin-arm64:"; \
-		ls -la $(BUILD_DIR)/darwin-arm64/; \
-		cd $(BUILD_DIR)/darwin-arm64 && \
-		hdiutil create -volname "$(APP_NAME)" -srcfolder . -ov -format UDZO ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.dmg; \
-	else \
-		echo "macOS ARM64 build not found. Skipping DMG creation."; \
-	fi
-
-package-dmg: package-dmg-amd64 package-dmg-arm64
-
-package-zip-amd64:
-	@echo "Creating macOS ZIP for Intel..."
+package-darwin-amd64: build-darwin-amd64
+	@echo "Packaging macOS Intel with Fyne..."
 	@mkdir -p $(DIST_DIR)
-	@if [ -d "$(BUILD_DIR)/darwin-amd64" ]; then \
-		echo "Contents of $(BUILD_DIR)/darwin-amd64:"; \
-		ls -la $(BUILD_DIR)/darwin-amd64/; \
-		cd $(BUILD_DIR)/darwin-amd64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip .; \
-	elif [ -f "$(BUILD_DIR)/darwin-amd64/$(APP_NAME)" ]; then \
-		echo "Creating ZIP from binary only"; \
-		cd $(BUILD_DIR)/darwin-amd64 && zip ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.zip $(APP_NAME); \
-	else \
-		echo "macOS Intel build not found. Creating empty marker file."; \
-		echo "macOS Intel build failed" > $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-amd64.txt; \
-	fi
+	$(FYNE) package -os darwin \
+		--name "GitHub Profile Manager" \
+		--app-id $(APP_ID) \
+		--app-version $(VERSION) \
+		--icon logo.png \
+		--executable $(BUILD_DIR)/darwin-amd64/$(APP_NAME) \
+		--release
+	@mv *.dmg $(DIST_DIR)/GitHubProfileManager-$(VERSION)-darwin-amd64.dmg 2>/dev/null || true
+	@zip -r $(DIST_DIR)/GitHubProfileManager-$(VERSION)-darwin-amd64.zip "GitHub Profile Manager.app" 2>/dev/null || true
+	@rm -rf "GitHub Profile Manager.app" 2>/dev/null || true
 
-package-zip-arm64:
-	@echo "Creating macOS ZIP for Apple Silicon..."
+package-darwin-arm64: build-darwin-arm64
+	@echo "Packaging macOS ARM64 with Fyne..."
 	@mkdir -p $(DIST_DIR)
-	@if [ -d "$(BUILD_DIR)/darwin-arm64" ]; then \
-		echo "Contents of $(BUILD_DIR)/darwin-arm64:"; \
-		ls -la $(BUILD_DIR)/darwin-arm64/; \
-		cd $(BUILD_DIR)/darwin-arm64 && zip -r ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip .; \
-	elif [ -f "$(BUILD_DIR)/darwin-arm64/$(APP_NAME)" ]; then \
-		echo "Creating ZIP from binary only"; \
-		cd $(BUILD_DIR)/darwin-arm64 && zip ../../$(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.zip $(APP_NAME); \
-	else \
-		echo "macOS ARM64 build not found. Creating empty marker file."; \
-		echo "macOS ARM64 build failed" > $(DIST_DIR)/$(APP_NAME)-$(VERSION)-darwin-arm64.txt; \
-	fi
-
-package-darwin-amd64: 
-	@echo "Packaging macOS Intel..."
-	@mkdir -p $(DIST_DIR)
-	@echo "Build directory contents:"
-	@ls -la $(BUILD_DIR)/ || echo "Build directory not found"
-	@$(MAKE) package-dmg-amd64
-	@$(MAKE) package-zip-amd64
-	@echo "Final dist directory contents:"
-	@ls -la $(DIST_DIR)/ || echo "Dist directory not found"
-
-package-darwin-arm64: 
-	@echo "Packaging macOS ARM..."
-	@mkdir -p $(DIST_DIR)
-	@echo "Build directory contents:"
-	@ls -la $(BUILD_DIR)/ || echo "Build directory not found"
-	@$(MAKE) package-dmg-arm64
-	@$(MAKE) package-zip-arm64
-	@echo "Final dist directory contents:"
-	@ls -la $(DIST_DIR)/ || echo "Dist directory not found"
+	$(FYNE) package -os darwin \
+		--name "GitHub Profile Manager" \
+		--app-id $(APP_ID) \
+		--app-version $(VERSION) \
+		--icon logo.png \
+		--executable $(BUILD_DIR)/darwin-arm64/$(APP_NAME) \
+		--release
+	@mv *.dmg $(DIST_DIR)/GitHubProfileManager-$(VERSION)-darwin-arm64.dmg 2>/dev/null || true
+	@zip -r $(DIST_DIR)/GitHubProfileManager-$(VERSION)-darwin-arm64.zip "GitHub Profile Manager.app" 2>/dev/null || true
+	@rm -rf "GitHub Profile Manager.app" 2>/dev/null || true
 
 package-linux: package-deb package-tar
 
-package-darwin: package-dmg package-zip-amd64 package-zip-arm64
+package-darwin: package-darwin-amd64 package-darwin-arm64
 
 package: package-linux
 
